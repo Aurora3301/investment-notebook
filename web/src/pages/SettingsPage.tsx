@@ -63,7 +63,7 @@ export function SettingsPage() {
       </Card>
 
       <Card title="四關名稱">
-        <p className="muted">來源是大叔美股筆記。這裡不替你填寫非官方關卡名稱，預設只是關卡一至關卡四。</p>
+        <p className="muted">預設名稱是關卡一至關卡四，可在這裡修改。</p>
         <div className="stack">
           {settings.gateTitles.map((title, index) => (
             <Field key={index} label={`第 ${index + 1} 關`}>

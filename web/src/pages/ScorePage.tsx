@@ -49,7 +49,7 @@ export function ScorePage() {
   return (
     <div>
       <Card title="選股評分（40 分）">
-        <p className="muted">阿樂選股四大原則，每項 10 分，來源《投資唔講廢話》2021。這不是大叔美股筆記的四關法。</p>
+        <p className="muted">四項各 10 分，合計 40。</p>
         {tickers.length === 0 ? <p className="muted">先在組合加入持股或觀察名單。</p> : null}
         <div className="stack">
           {tickers.map((ticker) => {

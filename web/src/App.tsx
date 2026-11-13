@@ -95,7 +95,7 @@ function Shell() {
         {dbError ? <div className="banner soft">{dbError}</div> : null}
         {marketError ? <div className="banner soft">{marketError}</div> : null}
         {month.knockedOut ? (
-          <div className="banner bad">本月回撤已達 {data.settings.monthlyKnockoutPct}%。教學建議平倉，並停止交易至月底。</div>
+          <div className="banner bad">本月回撤已達 {data.settings.monthlyKnockoutPct}%。建議平倉，並停止交易至月底。</div>
         ) : null}
       </header>
       <main>

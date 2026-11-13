@@ -500,7 +500,6 @@ function HoldingDetail({ holding, onBack }: { holding: Holding; onBack: () => vo
       </Card>
 
       <Card title="四關法">
-        <p className="muted">來源：大叔美股筆記。預設只叫關卡一至關卡四，可在設定改名。這組顏色與阿樂的選股四原則無關。</p>
         <div className="gates">
           {holding.gates.map((gate, index) => (
             <div className="gate" key={titles[index]}>

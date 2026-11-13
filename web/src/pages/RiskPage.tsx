@@ -46,8 +46,7 @@ export function RiskPage() {
     <div>
       <Card title="2% / 6%">
         <p className="muted">
-          2% 是單筆交易最多可以虧的戶口比例，避免一次虧損毀掉整個戶口。6% 是相對本月起始資產的回撤，避免連虧毀掉整個月。來源是《投資唔講廢話》2021
-          年教學，不是本程式的投資建議。
+          2% 是單筆交易最多可以虧的戶口比例，避免一次虧損毀掉整個戶口。6% 是相對本月起始資產的回撤，避免連虧毀掉整個月。
         </p>
         <div className="grid2">
           <div className="stat">
@@ -68,7 +67,7 @@ export function RiskPage() {
           </div>
         </div>
         {month.knockedOut ? (
-          <p className="banner bad">本月回撤已達 {data.settings.monthlyKnockoutPct}%。教學建議平倉，並停止交易至月底。</p>
+          <p className="banner bad">本月回撤已達 {data.settings.monthlyKnockoutPct}%。建議平倉，並停止交易至月底。</p>
         ) : (
           <p className="muted">本月回撤 {month.drawdownPct == null ? "未鎖定起始資產" : pct(month.drawdownPct)}。入金不會掩飾虧損。</p>
         )}

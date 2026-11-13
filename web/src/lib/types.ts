@@ -191,7 +191,7 @@ export interface BackupFile {
 export const CYCLE_INFO: Record<Exclude<CycleStage, "unset">, { label: string; tilt: string }> = {
   recovery: { label: "復甦", tilt: "週期股與價值股" },
   expansion: { label: "擴張", tilt: "成長股與週期股" },
-  peak: { label: "高峰滯漲", tilt: "防守股與現金。教學亦提到縮短倉；本程式不提供沽空或衍生工具。" },
+  peak: { label: "高峰滯漲", tilt: "防守股與現金。本程式不提供沽空或衍生工具。" },
   recession: { label: "衰退", tilt: "價值股、防守股與現金" },
 };
 
