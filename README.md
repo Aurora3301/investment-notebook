@@ -49,7 +49,7 @@ Android 用 Chrome 的「加到主畫面」或「安裝應用程式」即可。�
 | 美元／港元 | [Frankfurter](https://www.frankfurter.app)（歐洲央行參考匯率） | 可以 |
 | VOO 調整收市價（含股息的總回報） | Yahoo Finance chart | 瀏覽器通常被跨域政策擋住 |
 
-VOO 對照會先試直接讀 Yahoo。若被擋住，才用 `api.allorigins.win` 做**最後備援**，網址裡只有代號同日期，沒有持倉。代理失敗就改用 CNBC 收市價，畫面會寫明「未含股息再投資」。成功的價格會存在本機，離線仍可看上次數字。股價時間會轉成 `Asia/Hong_Kong`。
+現價只用 CNBC，不用 Yahoo：在 GitHub Pages 上，瀏覽器讀 Yahoo 會被跨域政策擋住。美元／港元用 Frankfurter。兩者都不是交易所正式即時報價，只供個人對照。VOO 的歷史對照以 CNBC 收市價為準，畫面會寫明未含股息再投資。報價顯示之後，程式或會在背景試一次 Yahoo 調整收市價；試不到就保持 CNBC，也不經第三方代理。成功的價格會存在本機。股價時間會轉成 `Asia/Hong_Kong`。
 
 XIRR 用實際日數除以 365，跟 Excel 同一套。入金是流出，提款是流入，終值是當日股票市值加現金。VOO 對照是：同樣的港元現金流在當日匯率買入 VOO，提款就賣出，再算年化。
 
@@ -116,7 +116,7 @@ On iPhone, open that URL in Safari and use Share → Add to Home Screen.
 
 To install the native shell, a Mac user opens `ios/InvestmentNotebook.xcodeproj`, selects their signing team, and runs it on their own iPhone. App Store and TestFlight still need a paid Apple Developer account. Strangers cannot sideload a native iOS app from GitHub alone.
 
-Export and import one JSON file from Settings. Quotes are requested from the device: CNBC for prices, Frankfurter for USD/HKD, and Yahoo adjusted closes for the VOO comparison when the browser allows it. If Yahoo is blocked by CORS, a last-resort proxy (`api.allorigins.win`) is used for the symbol URL only. Positions, costs, and cash are never sent.
+Export and import one JSON file from Settings. Last prices come from CNBC and USD/HKD from Frankfurter, both requested by the device. Yahoo is not used for last prices because GitHub Pages cannot read it from the browser. VOO history uses CNBC closes, which do not reinvest dividends; an optional Yahoo adjusted-close attempt runs in the background and does not block the quote refresh. Positions, costs, and cash are never sent.
 
 ```bash
 cd web && npm install && npm test && npm run dev

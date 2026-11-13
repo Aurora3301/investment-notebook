@@ -1,17 +1,43 @@
 import type { FxQuote, Notebook, PricePoint, PriceSeries, Quote } from "./types";
 import { addDays, nyDate, todayHK, usCloseIso } from "./dates";
 
+/**
+ * Quote sources for this on-device PWA.
+ *
+ * Live last prices come only from CNBC's unofficial quote endpoint
+ * (`quote.cnbc.com` restQuote). A browser on
+ * https://aurora3301.github.io can read it: the GET response sends
+ * `Access-Control-Allow-Origin: *`.
+ *
+ * Yahoo Finance (`query1.finance.yahoo.com`) is not a last-price source.
+ * Fetches from the GitHub Pages origin are blocked by CORS (no ACAO
+ * header; Chrome reports `net::ERR_FAILED`). Putting Yahoo on the refresh
+ * path leaves 「更新報價」 on 「更新中…」 and the portfolio on 「未有報價」.
+ *
+ * USD/HKD comes from Frankfurter (`api.frankfurter.dev`), which also sends
+ * `Access-Control-Allow-Origin: *`.
+ *
+ * CNBC and Frankfurter are unofficial feeds. They are not licensed SIP or
+ * consolidated-tape real-time data. Figures are for personal reference in
+ * this notebook, not for trading or redistribution. Requests send ticker
+ * symbols or the USD/HKD pair only. Shares, cost, and cash stay on device.
+ *
+ * History for marks and the VOO comparison is loaded from CNBC daily bars
+ * (`ts-api.cnbc.com`) on a fixed start date, so cashflow dates are not part
+ * of the request. Those closes do not reinvest dividends. When that series
+ * is what VOO uses, the portfolio screen says the comparison excludes
+ * dividend reinvestment.
+ *
+ * Yahoo adjusted close would be a better total-return series for VOO, but
+ * the same CORS block applies. After live quotes are already on screen, the
+ * app may try Yahoo once in the background with a short timeout. There is
+ * no third-party CORS proxy. If Yahoo does not return, the CNBC close series
+ * stays and the dividend disclosure stays with it.
+ */
+
 const HISTORY_START = "2010-01-01";
 const CNBC_QUOTE = "https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol";
 const FRANKFURTER = "https://api.frankfurter.dev/v2/rates";
-
-export interface MarketUpdate {
-  quotes: Record<string, Quote>;
-  fx: FxQuote | null;
-  fxHistory: { date: string; rate: number }[];
-  priceHistory: Record<string, PriceSeries>;
-  errors: string[];
-}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -162,19 +188,6 @@ export function parseFrankfurter(payload: unknown): { date: string; rate: number
   return rows;
 }
 
-export function unwrapProxy(payload: unknown): unknown {
-  const row = asRecord(payload);
-  if (!row || !("contents" in row)) return payload;
-  if (typeof row.contents === "string") {
-    try {
-      return JSON.parse(row.contents);
-    } catch {
-      return payload;
-    }
-  }
-  return row.contents ?? payload;
-}
-
 export function parseYahooChart(payload: unknown): PricePoint[] {
   const chart = asRecord(asRecord(payload)?.chart);
   const result = chart?.result;
@@ -263,24 +276,90 @@ async function fetchFxHistory(start: string, end: string): Promise<{ date: strin
   return rows;
 }
 
-async function fetchYahooAdjusted(symbol: string, start: string, end: string): Promise<{ points: PricePoint[]; source: "yahoo" | "yahoo-proxy" } | null> {
-  const period1 = Math.floor(Date.parse(`${start}T00:00:00Z`) / 1000);
-  const period2 = Math.floor(Date.parse(`${end}T23:59:59Z`) / 1000);
-  const yahoo = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d&includeAdjustedClose=true`;
+/** True when a Yahoo adjusted series is long enough to price the first cashflow. */
+export function yahooHistoryCovers(points: PricePoint[], earliestCashflow?: string): boolean {
+  if (points.length < 100) return false;
+  if (!earliestCashflow) return true;
+  return (points[0]?.date ?? "9999-99-99") <= earliestCashflow;
+}
+
+/**
+ * Optional VOO total-return history. Direct Yahoo only, four-second cap.
+ * Callers must not await this before painting CNBC last prices or FX.
+ * A CORS failure returns null and the CNBC close series remains in use.
+ */
+export async function tryYahooVooHistory(): Promise<PricePoint[] | null> {
+  const today = todayHK();
+  const period1 = Math.floor(Date.parse(`${HISTORY_START}T00:00:00Z`) / 1000);
+  const period2 = Math.floor(Date.parse(`${today}T23:59:59Z`) / 1000);
+  const yahoo = `https://query1.finance.yahoo.com/v8/finance/chart/VOO?period1=${period1}&period2=${period2}&interval=1d&includeAdjustedClose=true`;
   try {
-    const points = parseYahooChart(await fetchJson(yahoo, 8000));
-    if (points.length > 50) return { points, source: "yahoo" };
+    const points = parseYahooChart(await fetchJson(yahoo, 4000));
+    return points.length > 50 ? points : null;
   } catch {
-    /* Browser CORS usually rejects Yahoo. */
+    return null;
   }
-  try {
-    const proxied = `https://api.allorigins.win/raw?url=${encodeURIComponent(yahoo)}`;
-    const points = parseYahooChart(unwrapProxy(await fetchJson(proxied, 15000)));
-    if (points.length > 50) return { points, source: "yahoo-proxy" };
-  } catch {
-    /* Proxy is optional. */
+}
+
+export interface LiveMarket {
+  quotes: Record<string, Quote>;
+  fx: FxQuote | null;
+  errors: string[];
+}
+
+/** CNBC last prices and the latest Frankfurter USD/HKD. No history, no Yahoo. */
+export async function fetchLiveMarket(current: Notebook): Promise<LiveMarket> {
+  const errors: string[] = [];
+  const [quoteResult, fxResult] = await Promise.allSettled([
+    fetchCnbcQuotes(quoteSymbols(current)),
+    fetchFxLatest(),
+  ]);
+  const quotes: Record<string, Quote> = { ...current.quotes };
+  if (quoteResult.status === "fulfilled") {
+    for (const quote of quoteResult.value) quotes[quote.ticker] = quote;
+  } else {
+    errors.push(`報價：${message(quoteResult.reason)}`);
   }
-  return null;
+  const fx = fxResult.status === "fulfilled" ? fxResult.value : current.fx;
+  if (fxResult.status === "rejected") errors.push(`匯率：${message(fxResult.reason)}`);
+  return { quotes, fx, errors };
+}
+
+export interface HistoryMarket {
+  fxHistory: { date: string; rate: number }[];
+  priceHistory: Record<string, PriceSeries>;
+  errors: string[];
+}
+
+/** CNBC daily closes and Frankfurter history. Does not call Yahoo. */
+export async function fetchHistoryMarket(current: Notebook, opts?: { forceHistory?: boolean }): Promise<HistoryMarket> {
+  const today = todayHK();
+  const errors: string[] = [];
+  let fxHistory = current.fxHistory;
+  if (opts?.forceHistory || !fxFresh(fxHistory, today)) {
+    try {
+      fxHistory = await fetchFxHistory(HISTORY_START, today);
+    } catch (error) {
+      errors.push(`歷史匯率：${message(error)}`);
+    }
+  }
+  const priceHistory: Record<string, PriceSeries> = { ...current.priceHistory };
+  await pool(historySymbols(current), 3, async (symbol) => {
+    if (!opts?.forceHistory && seriesFresh(priceHistory[symbol], today)) return;
+    try {
+      const points = await fetchCnbcHistory(symbol, HISTORY_START, today);
+      if (!points.length) return;
+      priceHistory[symbol] = {
+        points,
+        adjusted: false,
+        source: "cnbc",
+        fetchedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      errors.push(`${symbol} 歷史價：${message(error)}`);
+    }
+  });
+  return { fxHistory, priceHistory, errors };
 }
 
 async function pool(symbols: string[], limit: number, task: (symbol: string) => Promise<void>): Promise<void> {
@@ -293,69 +372,4 @@ async function pool(symbols: string[], limit: number, task: (symbol: string) => 
     }
   });
   await Promise.all(workers);
-}
-
-export async function refreshMarketData(current: Notebook, opts?: { forceHistory?: boolean }): Promise<MarketUpdate> {
-  const today = todayHK();
-  const errors: string[] = [];
-  const symbols = quoteSymbols(current);
-  let freshQuotes: Quote[] = [];
-  let fx = current.fx;
-  const results = await Promise.allSettled([fetchCnbcQuotes(symbols), fetchFxLatest()]);
-  if (results[0].status === "fulfilled") freshQuotes = results[0].value;
-  else errors.push(`報價：${message(results[0].reason)}`);
-  if (results[1].status === "fulfilled") fx = results[1].value;
-  else errors.push(`匯率：${message(results[1].reason)}`);
-
-  const quotes: Record<string, Quote> = { ...current.quotes };
-  for (const quote of freshQuotes) quotes[quote.ticker] = quote;
-
-  let fxHistory = current.fxHistory;
-  if (opts?.forceHistory || !fxFresh(fxHistory, today)) {
-    try {
-      fxHistory = await fetchFxHistory(HISTORY_START, today);
-    } catch (error) {
-      errors.push(`歷史匯率：${message(error)}`);
-    }
-  }
-
-  const priceHistory: Record<string, PriceSeries> = { ...current.priceHistory };
-  const needed = historySymbols(current);
-  await pool(needed, 3, async (symbol) => {
-    if (!opts?.forceHistory && seriesFresh(priceHistory[symbol], today)) return;
-    try {
-      const points = await fetchCnbcHistory(symbol, HISTORY_START, today);
-      if (points.length) {
-        priceHistory[symbol] = {
-          points,
-          adjusted: false,
-          source: "cnbc",
-          fetchedAt: new Date().toISOString(),
-        };
-      }
-    } catch (error) {
-      errors.push(`${symbol} 歷史價：${message(error)}`);
-    }
-  });
-
-  const earliestFlow = current.cashFlows.map((flow) => flow.date).sort()[0];
-  try {
-    const adjusted = await fetchYahooAdjusted("VOO", HISTORY_START, today);
-    if (adjusted && adjusted.points.length > 100) {
-      const first = adjusted.points[0]?.date ?? "";
-      const covers = !earliestFlow || first <= earliestFlow;
-      if (covers) {
-        priceHistory.VOO = {
-          points: adjusted.points,
-          adjusted: true,
-          source: adjusted.source,
-          fetchedAt: new Date().toISOString(),
-        };
-      }
-    }
-  } catch {
-    /* CNBC close remains the working series. */
-  }
-
-  return { quotes, fx, fxHistory, priceHistory, errors };
 }

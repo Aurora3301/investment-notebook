@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { valuePortfolio } from "../lib/calc";
 import { todayHK } from "../lib/dates";
 import { loadNotebook, saveNotebook } from "../lib/db";
-import { refreshMarketData } from "../lib/quotes";
+import { fetchHistoryMarket, fetchLiveMarket, tryYahooVooHistory, yahooHistoryCovers } from "../lib/quotes";
 import { emptyNotebook, type Holding, type Notebook, type Quote } from "../lib/types";
 
 interface Store {
@@ -40,6 +40,7 @@ export function NotebookProvider({ children }: { children: ReactNode }) {
   const pending = useRef<Notebook | null>(null);
   const timer = useRef<number | null>(null);
   const booted = useRef(false);
+  const refreshGeneration = useRef(0);
 
   const persist = useCallback((next: Notebook) => {
     pending.current = next;
@@ -96,18 +97,23 @@ export function NotebookProvider({ children }: { children: ReactNode }) {
 
   const refreshMarket = useCallback(
     async (opts?: { forceHistory?: boolean }) => {
+      const generation = refreshGeneration.current + 1;
+      refreshGeneration.current = generation;
       setMarketBusy(true);
       setMarketError(null);
+      const stale = () => refreshGeneration.current !== generation;
+      let liveErrors: string[] = [];
       try {
-        const result = await refreshMarketData(dataRef.current, opts);
+        // Paint CNBC last prices and Frankfurter FX before any history request.
+        const live = await fetchLiveMarket(dataRef.current);
+        if (stale()) return;
+        liveErrors = live.errors;
         setData((prev) => {
           const next: Notebook = {
             ...prev,
-            quotes: result.quotes,
-            fx: result.fx ?? prev.fx,
-            fxHistory: result.fxHistory,
-            priceHistory: result.priceHistory,
-            holdings: prev.holdings.map((holding) => enrichHolding(holding, result.quotes)),
+            quotes: live.quotes,
+            fx: live.fx ?? prev.fx,
+            holdings: prev.holdings.map((holding) => enrichHolding(holding, live.quotes)),
           };
           const today = todayHK();
           const equity = valuePortfolio(next).equityHkd;
@@ -115,11 +121,51 @@ export function NotebookProvider({ children }: { children: ReactNode }) {
           persist(next);
           return next;
         });
-        if (result.errors.length) setMarketError(result.errors.join("　"));
+        if (live.errors.length) setMarketError(live.errors.join("　"));
       } catch (error) {
-        setMarketError(error instanceof Error ? error.message : "更新失敗");
+        if (!stale()) setMarketError(error instanceof Error ? error.message : "更新失敗");
       } finally {
-        setMarketBusy(false);
+        if (!stale()) setMarketBusy(false);
+      }
+
+      // Yahoo is started now so a CORS failure cannot hold the button on 「更新中…」.
+      const yahooPromise = tryYahooVooHistory();
+      try {
+        const history = await fetchHistoryMarket(dataRef.current, opts);
+        if (stale()) return;
+        setData((prev) => {
+          const next: Notebook = {
+            ...prev,
+            fxHistory: history.fxHistory,
+            priceHistory: { ...prev.priceHistory, ...history.priceHistory },
+          };
+          persist(next);
+          return next;
+        });
+        const errors = [...liveErrors, ...history.errors];
+        if (!stale()) setMarketError(errors.length ? errors.join("　") : null);
+      } catch (error) {
+        if (!stale()) setMarketError(error instanceof Error ? error.message : "歷史價格更新失敗");
+      }
+
+      try {
+        const points = await yahooPromise;
+        if (stale() || !points) return;
+        const earliest = [...dataRef.current.cashFlows].map((flow) => flow.date).sort()[0];
+        if (!yahooHistoryCovers(points, earliest)) return;
+        setData((prev) => {
+          const next: Notebook = {
+            ...prev,
+            priceHistory: {
+              ...prev.priceHistory,
+              VOO: { points, adjusted: true, source: "yahoo", fetchedAt: new Date().toISOString() },
+            },
+          };
+          persist(next);
+          return next;
+        });
+      } catch {
+        // CNBC close remains, and the portfolio screen keeps the dividend disclosure.
       }
     },
     [persist],

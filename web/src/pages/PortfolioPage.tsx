@@ -37,9 +37,7 @@ export function PortfolioPage() {
   const priceLabel = !series
     ? "未有 VOO 歷史價。按「更新報價」後先可以比較。"
     : series.adjusted
-      ? series.source === "yahoo-proxy"
-        ? "VOO 用 Yahoo 調整收市價（總回報）。瀏覽器直接讀 Yahoo 被擋，所以經備援代理，網址只含代號。"
-        : "VOO 用 Yahoo 調整收市價（含股息的總回報）。"
+      ? "VOO 用 Yahoo 調整收市價（含股息的總回報）。現價仍然來自 CNBC。"
       : "VOO 用 CNBC 收市價。這條系列未含股息再投資，對照回報會略低於真正的總回報。";
 
   return (

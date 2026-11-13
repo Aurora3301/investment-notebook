@@ -3,7 +3,7 @@ import { applyTrade, buildEquityCurve, forcedStopUsd, isAveragingDown, monthPerf
 import { nyDate, usCloseIso } from "./dates";
 import { createDemo } from "./demo";
 import { migrate } from "./normalize";
-import { parseChangePct, parseCnbcQuotes, parseFrankfurter, parseMarketCap, parseYahooChart } from "./quotes";
+import { parseChangePct, parseCnbcQuotes, parseFrankfurter, parseMarketCap, parseYahooChart, yahooHistoryCovers } from "./quotes";
 import { emptyNotebook } from "./types";
 
 describe("xirr", () => {
@@ -259,5 +259,16 @@ describe("quote parsing", () => {
     });
     expect(points[0]?.close).toBeCloseTo(419.54, 2);
     expect(points[0]?.date).toBe("2024-01-02");
+  });
+
+  it("keeps a short Yahoo series from replacing CNBC history", () => {
+    const points = Array.from({ length: 40 }, (_, index) => ({ date: `2024-01-${String(index + 1).padStart(2, "0")}`, close: 100 }));
+    expect(yahooHistoryCovers(points, "2024-03-01")).toBe(false);
+    const long = Array.from({ length: 120 }, (_, index) => ({
+      date: new Date(Date.UTC(2024, 0, 1 + index)).toISOString().slice(0, 10),
+      close: 100,
+    }));
+    expect(yahooHistoryCovers(long, "2024-03-01")).toBe(true);
+    expect(yahooHistoryCovers(long, "2023-01-01")).toBe(false);
   });
 });
