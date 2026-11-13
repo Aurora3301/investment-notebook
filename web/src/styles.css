@@ -202,7 +202,7 @@ button { cursor: pointer; }
   width: min(560px, 100%);
   bottom: 0;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   background: #fbf8f3;
   border-top: 1px solid var(--line);
   padding: 4px 4px calc(6px + env(safe-area-inset-bottom));
@@ -212,7 +212,7 @@ button { cursor: pointer; }
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   display: flex;
   flex-direction: column;
   align-items: center;

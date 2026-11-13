@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { monthPerformance, valuePortfolio } from "./lib/calc";
 import { createDemo } from "./lib/demo";
 import { emptyNotebook } from "./lib/types";
+import { AdvicePage } from "./pages/AdvicePage";
 import { JournalPage } from "./pages/JournalPage";
 import { PortfolioPage } from "./pages/PortfolioPage";
 import { RiskPage } from "./pages/RiskPage";
@@ -10,13 +11,14 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { NotebookProvider, useNotebook } from "./state/store";
 import { Icon } from "./ui/ui";
 
-type Tab = "portfolio" | "risk" | "score" | "journal" | "settings";
+type Tab = "portfolio" | "risk" | "score" | "journal" | "advice" | "settings";
 
-const TABS: { id: Tab; label: string; icon: "portfolio" | "risk" | "score" | "journal" | "settings" }[] = [
+const TABS: { id: Tab; label: string; icon: "portfolio" | "risk" | "score" | "journal" | "advice" | "settings" }[] = [
   { id: "portfolio", label: "組合", icon: "portfolio" },
   { id: "risk", label: "風險", icon: "risk" },
   { id: "score", label: "選股", icon: "score" },
   { id: "journal", label: "筆記", icon: "journal" },
+  { id: "advice", label: "建議", icon: "advice" },
   { id: "settings", label: "設定", icon: "settings" },
 ];
 
@@ -103,6 +105,7 @@ function Shell() {
         {tab === "risk" ? <RiskPage /> : null}
         {tab === "score" ? <ScorePage /> : null}
         {tab === "journal" ? <JournalPage /> : null}
+        {tab === "advice" ? <AdvicePage /> : null}
         {tab === "settings" ? <SettingsPage /> : null}
       </main>
       <nav className="nav" aria-label="主要">

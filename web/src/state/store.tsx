@@ -13,7 +13,7 @@ interface Store {
   marketBusy: boolean;
   update: (fn: (data: Notebook) => Notebook) => void;
   replace: (data: Notebook) => void;
-  refreshMarket: (opts?: { forceHistory?: boolean }) => Promise<void>;
+  refreshMarket: (opts?: { forceHistory?: boolean }) => Promise<{ book: Notebook; liveErrors: string[] }>;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -103,70 +103,78 @@ export function NotebookProvider({ children }: { children: ReactNode }) {
       setMarketError(null);
       const stale = () => refreshGeneration.current !== generation;
       let liveErrors: string[] = [];
+      let book = dataRef.current;
       try {
         // Paint CNBC last prices and Frankfurter FX before any history request.
         const live = await fetchLiveMarket(dataRef.current);
-        if (stale()) return;
         liveErrors = live.errors;
-        setData((prev) => {
-          const next: Notebook = {
-            ...prev,
-            quotes: live.quotes,
-            fx: live.fx ?? prev.fx,
-            holdings: prev.holdings.map((holding) => enrichHolding(holding, live.quotes)),
-          };
-          const today = todayHK();
-          const equity = valuePortfolio(next).equityHkd;
-          next.equitySnapshots = [...next.equitySnapshots.filter((item) => item.date !== today), { date: today, equityHkd: equity }].slice(-800);
-          persist(next);
-          return next;
-        });
-        if (live.errors.length) setMarketError(live.errors.join("　"));
+        if (!stale()) {
+          setData((prev) => {
+            const next: Notebook = {
+              ...prev,
+              quotes: live.quotes,
+              fx: live.fx ?? prev.fx,
+              holdings: prev.holdings.map((holding) => enrichHolding(holding, live.quotes)),
+            };
+            const today = todayHK();
+            const equity = valuePortfolio(next).equityHkd;
+            next.equitySnapshots = [...next.equitySnapshots.filter((item) => item.date !== today), { date: today, equityHkd: equity }].slice(-800);
+            persist(next);
+            book = next;
+            return next;
+          });
+          if (live.errors.length) setMarketError(live.errors.join("　"));
+        }
       } catch (error) {
         if (!stale()) setMarketError(error instanceof Error ? error.message : "更新失敗");
       } finally {
         if (!stale()) setMarketBusy(false);
       }
 
-      // Yahoo is started now so a CORS failure cannot hold the button on 「更新中…」.
-      const yahooPromise = tryYahooVooHistory();
-      try {
-        const history = await fetchHistoryMarket(dataRef.current, opts);
-        if (stale()) return;
-        setData((prev) => {
-          const next: Notebook = {
-            ...prev,
-            fxHistory: history.fxHistory,
-            priceHistory: { ...prev.priceHistory, ...history.priceHistory },
-          };
-          persist(next);
-          return next;
-        });
-        const errors = [...liveErrors, ...history.errors];
-        if (!stale()) setMarketError(errors.length ? errors.join("　") : null);
-      } catch (error) {
-        if (!stale()) setMarketError(error instanceof Error ? error.message : "歷史價格更新失敗");
-      }
+      const priced = book;
+      const errorsNow = liveErrors;
+      void (async () => {
+        // Yahoo starts here so a CORS failure cannot hold 「更新報價」 or advice.
+        const yahooPromise = tryYahooVooHistory();
+        try {
+          const history = await fetchHistoryMarket(dataRef.current, opts);
+          if (stale()) return;
+          setData((prev) => {
+            const next: Notebook = {
+              ...prev,
+              fxHistory: history.fxHistory,
+              priceHistory: { ...prev.priceHistory, ...history.priceHistory },
+            };
+            persist(next);
+            return next;
+          });
+          const historyErrors = [...errorsNow, ...history.errors];
+          if (!stale()) setMarketError(historyErrors.length ? historyErrors.join("　") : null);
+        } catch (error) {
+          if (!stale()) setMarketError(error instanceof Error ? error.message : "歷史價格更新失敗");
+        }
+        try {
+          const points = await yahooPromise;
+          if (stale() || !points) return;
+          const earliest = [...dataRef.current.cashFlows].map((flow) => flow.date).sort()[0];
+          if (!yahooHistoryCovers(points, earliest)) return;
+          setData((prev) => {
+            const next: Notebook = {
+              ...prev,
+              priceHistory: {
+                ...prev.priceHistory,
+                VOO: { points, adjusted: true, source: "yahoo", fetchedAt: new Date().toISOString() },
+              },
+            };
+            persist(next);
+            return next;
+          });
+        } catch {
+          // CNBC close remains, and the portfolio screen keeps the dividend disclosure.
+        }
+      })();
 
-      try {
-        const points = await yahooPromise;
-        if (stale() || !points) return;
-        const earliest = [...dataRef.current.cashFlows].map((flow) => flow.date).sort()[0];
-        if (!yahooHistoryCovers(points, earliest)) return;
-        setData((prev) => {
-          const next: Notebook = {
-            ...prev,
-            priceHistory: {
-              ...prev.priceHistory,
-              VOO: { points, adjusted: true, source: "yahoo", fetchedAt: new Date().toISOString() },
-            },
-          };
-          persist(next);
-          return next;
-        });
-      } catch {
-        // CNBC close remains, and the portfolio screen keeps the dividend disclosure.
-      }
+      return { book: priced, liveErrors: errorsNow };
     },
     [persist],
   );

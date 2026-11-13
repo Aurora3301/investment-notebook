@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { applyTrade, buildEquityCurve, forcedStopUsd, isAveragingDown, monthPerformance, performanceSummary, suggestSize, vooBenchmark, xirr } from "./calc";
 import { nyDate, usCloseIso } from "./dates";
+import { advise } from "./advice";
 import { createDemo } from "./demo";
+import { todayHK } from "./dates";
 import { migrate } from "./normalize";
 import { parseChangePct, parseCnbcQuotes, parseFrankfurter, parseMarketCap, parseYahooChart, yahooHistoryCovers } from "./quotes";
 import { emptyNotebook } from "./types";
@@ -205,6 +207,40 @@ describe("trades and migration", () => {
     expect(demo.settings.onboarding).toBe("demo");
     expect(demo.watchlist.map((item) => item.ticker)).toEqual(["OKTA", "PANW", "CRWD", "VST", "VRT"]);
     expect(demo.trades.some((trade) => trade.averagingDown)).toBe(true);
+  });
+});
+
+describe("on-device advice", () => {
+  it("does not invent a price when CNBC has not quoted the holding", () => {
+    const demo = createDemo();
+    const result = advise(demo, "AAPL 而家點", { liveErrors: ["報價：失敗"], refreshed: false });
+    expect(result.answer).toContain("未有 CNBC 現價");
+    expect(result.answer).toContain("唔報市價");
+    expect(result.answer).not.toContain("$210");
+    expect(result.answer).not.toContain("大叔");
+    expect(result.answer).not.toContain("阿樂");
+    expect(result.answer).toContain("25");
+  });
+
+  it("uses the refreshed CNBC price and flags averaging down", () => {
+    const demo = createDemo();
+    demo.fx = { rate: 7.8, date: todayHK(), fetchedAt: new Date().toISOString(), source: "test" };
+    demo.quotes.AAPL = {
+      ticker: "AAPL",
+      priceUsd: 210,
+      asOf: new Date().toISOString(),
+      currency: "USD",
+      changePct: null,
+      name: "Apple",
+      beta: 1.1,
+      marketCapUsd: null,
+      session: "已收市",
+      source: "CNBC",
+    };
+    const result = advise(demo, "有冇溝貨", { liveErrors: [], refreshed: true });
+    expect(result.answer).toContain("210.00");
+    expect(result.answer).toContain("JNJ");
+    expect(result.quoteNote).toContain("CNBC");
   });
 });
 

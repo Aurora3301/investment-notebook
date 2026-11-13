@@ -251,6 +251,18 @@ export function normalize(input: unknown): Notebook {
       if (!date || equity == null) return null;
       return { date, equityHkd: equity };
     }),
+    adviceTurns: mapRows(row.adviceTurns, (item, index) => {
+      const question = str(item.question).trim();
+      const answer = str(item.answer).trim();
+      if (!question || !answer) return null;
+      return {
+        id: str(item.id) || `advice-${index}`,
+        at: str(item.at),
+        question,
+        answer,
+        quoteNote: str(item.quoteNote),
+      };
+    }),
   };
 }
 

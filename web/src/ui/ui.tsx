@@ -107,7 +107,7 @@ export function LineChart({ points, label }: { points: { date: string; value: nu
   );
 }
 
-export function Icon({ name }: { name: "portfolio" | "risk" | "score" | "journal" | "settings" }) {
+export function Icon({ name }: { name: "portfolio" | "risk" | "score" | "journal" | "advice" | "settings" }) {
   const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   if (name === "portfolio") {
     return (
@@ -135,6 +135,13 @@ export function Icon({ name }: { name: "portfolio" | "risk" | "score" | "journal
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path {...common} d="M7 3h11v18H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
         <path {...common} d="M9 8h6M9 12h6M9 16h4" />
+      </svg>
+    );
+  }
+  if (name === "advice") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path {...common} d="M6 16.5A6.5 6.5 0 1 1 12.2 19H8l-2 2v-4.5Z" />
       </svg>
     );
   }

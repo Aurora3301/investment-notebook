@@ -164,6 +164,14 @@ export interface EquitySnapshot {
   equityHkd: number;
 }
 
+export interface AdviceTurn {
+  id: string;
+  at: string;
+  question: string;
+  answer: string;
+  quoteNote: string;
+}
+
 export interface Notebook {
   schemaVersion: number;
   holdings: Holding[];
@@ -179,6 +187,7 @@ export interface Notebook {
   fxHistory: { date: string; rate: number }[];
   priceHistory: Record<string, PriceSeries>;
   equitySnapshots: EquitySnapshot[];
+  adviceTurns: AdviceTurn[];
 }
 
 export interface BackupFile {
@@ -238,5 +247,6 @@ export function emptyNotebook(): Notebook {
     fxHistory: [],
     priceHistory: {},
     equitySnapshots: [],
+    adviceTurns: [],
   };
 }
