@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.vscode/
+.idea/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+ios/**/xcuserdata/
+.derived/
+coverage/
+*.tsbuildinfo
