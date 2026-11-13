@@ -4,12 +4,10 @@ import { createDemo } from "../lib/demo";
 import { parseDecimal } from "../lib/format";
 import { emptyNotebook, type Settings } from "../lib/types";
 import { useNotebook } from "../state/store";
-import { useChrome } from "../ui/chrome";
-import { Card, Field, GhostButton, PrimaryButton, Segmented, WarnButton } from "../ui/ui";
+import { Card, Field, GhostButton, PrimaryButton, WarnButton } from "../ui/ui";
 
 export function SettingsPage() {
   const { data, update, replace } = useNotebook();
-  const { theme, setTheme } = useChrome();
   const [message, setMessage] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
   const settings = data.settings;
@@ -20,16 +18,6 @@ export function SettingsPage() {
 
   return (
     <div>
-      <Card title="外觀">
-        <Segmented
-          value={theme}
-          onChange={setTheme}
-          options={[
-            { id: "light", label: "淺色" },
-            { id: "dark", label: "深色" },
-          ]}
-        />
-      </Card>
       <Card title="風險參數">
         <div className="grid2">
           <Field label="單筆風險 %">

@@ -1,155 +1,154 @@
 import { useEffect, useMemo, useState } from "react";
-import { valuePortfolio } from "../lib/calc";
+import { performanceSummary, valuePortfolio, vooBenchmark } from "../lib/calc";
 import { todayHK, formatHK } from "../lib/dates";
 import { demoWatchlist } from "../lib/demo";
 import { cleanTicker, hkd, num, pct, sharesText, usd, parseDecimal, uid } from "../lib/format";
 import { emptyGates, SECTORS, type Holding } from "../lib/types";
 import { useNotebook } from "../state/store";
-import { useChrome } from "../ui/chrome";
 import { Card, Field, GhostButton, PrimaryButton, gateLabel, nextGate } from "../ui/ui";
 
 export function PortfolioPage() {
   const { data, marketBusy, refreshMarket } = useNotebook();
-  const { hidden, toggleHidden } = useChrome();
   const [detailId, setDetailId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [open, setOpen] = useState<"cash" | "stocks" | "watch" | null>(null);
-  const [addMenu, setAddMenu] = useState(false);
-  const [hero, setHero] = useState(0);
-  const [pull, setPull] = useState(0);
-  const pullStart = useState<number | null>(null);
   const valuation = useMemo(() => valuePortfolio(data), [data]);
-  const touchY = pullStart[0];
-  const setTouchY = pullStart[1];
+  const asOf = todayHK();
+  const summary = useMemo(() => performanceSummary(data.cashFlows, valuation.equityHkd, asOf), [data.cashFlows, valuation.equityHkd, asOf]);
+  const series = data.priceHistory.VOO;
+  const benchmark = useMemo(() => {
+    if (!series) return null;
+    return vooBenchmark({
+      cashFlows: data.cashFlows,
+      asOf,
+      points: series.points,
+      adjusted: series.adjusted,
+      source: series.source,
+      fxHistory: data.fxHistory,
+      fxFallback: valuation.fx,
+    });
+  }, [series, data.cashFlows, data.fxHistory, asOf, valuation.fx]);
 
   const detail = data.holdings.find((holding) => holding.id === detailId);
   if (detail) return <HoldingDetail holding={detail} onBack={() => setDetailId(null)} />;
   if (adding) return <HoldingEditor holding={null} onClose={() => setAdding(false)} />;
 
-  const openHoldings = valuation.positions.filter((position) => position.holding.shares > 0).sort((a, b) => b.mvHkd - a.mvHkd);
   const quoteTimes = Object.values(data.quotes).map((quote) => quote.asOf).filter(Boolean).sort();
   const latestQuote = quoteTimes.at(-1);
-  const updated = latestQuote ? formatHK(latestQuote).slice(0, 10) : "未更新";
-  const heroChoices = [
-    { label: "我的總資產 (HKD)", value: valuation.fx ? plain(valuation.equityHkd) : "—" },
-    { label: "股票市值 (HKD)", value: valuation.fx ? plain(valuation.stockHkd) : "—" },
-    { label: "未實現盈虧 (HKD)", value: valuation.fx ? plain(valuation.unrealizedHkd) : "—" },
-    { label: "現金 (HKD)", value: plain(data.cashHkd) },
-  ];
-  const current = heroChoices[hero % heroChoices.length];
-  const stockNames = openHoldings.map((position) => position.holding.ticker).slice(0, 3).join("、") || "未有持股";
-  const watchNames = data.watchlist.map((item) => item.ticker).slice(0, 3).join("、") || "未有觀察";
+  const priceLabel = !series
+    ? "未有 VOO 歷史價。按「更新報價」後先可以比較。"
+    : series.adjusted
+      ? "VOO 用 Yahoo 調整收市價（含股息的總回報）。現價仍然來自 CNBC。"
+      : "VOO 用 CNBC 收市價。這條系列未含股息再投資，對照回報會略低於真正的總回報。";
 
   return (
-    <div
-      onTouchStart={(event) => {
-        if (window.scrollY <= 0) setTouchY(event.touches[0]?.clientY ?? null);
-      }}
-      onTouchMove={(event) => {
-        if (touchY == null || window.scrollY > 0) return;
-        setPull(Math.max(0, Math.min(90, (event.touches[0]?.clientY ?? touchY) - touchY)));
-      }}
-      onTouchEnd={() => {
-        if (pull > 64 && !marketBusy) void refreshMarket({ forceHistory: true });
-        setPull(0);
-        setTouchY(null);
-      }}
-    >
-      <p className="pull">{marketBusy ? "更新報價中…" : pull > 64 ? "放開以更新" : pull > 8 ? "下拉更新報價" : ""}</p>
-      <section className="balance">
-        <button className="plus" type="button" aria-label="新增" onClick={() => setAddMenu(true)}>+</button>
-        <div className="eyebrow">
-          <button className="hero-hit" type="button" onClick={() => setHero((value) => (value + 1) % heroChoices.length)}>{current.label}</button>
-          <button className="eye" type="button" aria-label={hidden ? "顯示金額" : "隱藏金額"} onClick={toggleHidden}>
-            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-              <path fill="none" stroke="currentColor" strokeWidth="1.8" d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12Z" />
-              <circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
-            </svg>
-          </button>
+    <div>
+      <section className="hero">
+        <div className="label">總資產（港元）</div>
+        <div className="total num">{valuation.fx ? hkd(valuation.equityHkd) : "待匯率"}</div>
+        <div className="sub num">{valuation.equityUsd != null ? `美元等值 ${usd(valuation.equityUsd, 0)}` : "未有美元匯率"}</div>
+        <div className="row">
+          <div>
+            <div className="label">未實現盈虧</div>
+            <div className={valuation.unrealizedHkd >= 0 ? "up" : "down"}>{hkd(valuation.unrealizedHkd)}</div>
+          </div>
+          <div>
+            <div className="label">股票市值</div>
+            <div>{hkd(valuation.stockHkd)}</div>
+          </div>
         </div>
-        <button className="hero-hit" type="button" onClick={() => setHero((value) => (value + 1) % heroChoices.length)}>
-          <h1 className="num amount">{current.value}</h1>
-        </button>
+        <p className="sub">{latestQuote ? `股價截至 ${formatHK(latestQuote)} 香港時間` : "未有報價"}</p>
+        <p className="sub">
+          {data.fx ? `美元兌港元 ${num(data.fx.rate, 4)}（${data.fx.date}）` : "未有美元兌港元"}
+          {valuation.provisional ? " · 有持倉暫用成本" : ""}
+        </p>
+        <div className="actions">
+          <PrimaryButton type="button" disabled={marketBusy} onClick={() => void refreshMarket({ forceHistory: true })}>
+            {marketBusy ? "更新中…" : "更新報價"}
+          </PrimaryButton>
+        </div>
       </section>
-      {data.settings.onboarding === "demo" ? <p className="ribbon">示範資料，並非真實持倉。</p> : null}
-      <div className="rail-row">
-        <div className="rail" aria-hidden="true">
-          <i style={{ background: "#6fce7a", flexGrow: Math.max(data.cashHkd, 1) }} />
-          <i style={{ background: "#6a6de0", flexGrow: Math.max(valuation.stockHkd, 1) }} />
-          <i style={{ background: "#9aa4f5", flexGrow: 1 }} />
+
+      <Card title="回報 vs 標普">
+        <div className="grid2">
+          <Stat label="戶口 XIRR" value={summary.xirr == null ? "—" : pct(summary.xirr)} />
+          <Stat label="VOO XIRR" value={benchmark?.xirr == null ? "—" : pct(benchmark.xirr)} />
+          <Stat
+            label="差距"
+            value={summary.xirr != null && benchmark?.xirr != null ? pct(summary.xirr - benchmark.xirr) : "—"}
+          />
+          <Stat label="簡單累計" value={summary.simpleReturn == null ? "—" : pct(summary.simpleReturn)} />
+          <Stat label="累計入金" value={hkd(summary.grossDeposits)} />
+          <Stat label="現值" value={hkd(summary.equityHkd)} />
+          <Stat label="盈虧" value={hkd(summary.profit)} />
+          <Stat label="淨投入" value={hkd(summary.netInvested)} />
         </div>
-        <div className="cat-stack">
-          <button className="cat" type="button" onClick={() => setOpen(open === "cash" ? null : "cash")}>
-            <div className="between"><h2>現金</h2><span className="figure amount num">{plain(data.cashHkd)}</span></div>
-            <div className="subline">港元結餘{data.cashFlows.length ? ` · ${data.cashFlows.length} 筆入帳` : ""}</div>
-            <div className="meta">{updated}</div>
+        <p className="muted">
+          XIRR 用實際日數除以 365，同 Excel 一樣。入金是流出，提款是流入，終值是今日股票加現金。{priceLabel}
+          {benchmark?.capped ? " 有提款多過當時的 VOO 市值，對照只計提得到的部分。" : ""}
+          {benchmark?.missing.length ? " 有日子缺價格或匯率，該筆未計入 VOO。" : ""}
+        </p>
+      </Card>
+
+      <CashCard />
+
+      <Card
+        title="持股"
+        extra={
+          <button className="btn-tiny" type="button" onClick={() => setAdding(true)}>
+            新增
           </button>
-          <button className="cat" type="button" onClick={() => setOpen(open === "stocks" ? null : "stocks")}>
-            <div className="between"><h2>持股</h2><span className="figure amount num">{valuation.fx ? plain(valuation.stockHkd) : "—"}</span></div>
-            <div className="subline">{stockNames}</div>
-            <Dots count={openHoldings.length} />
-            <div className="meta">{updated}</div>
-          </button>
-          <button className="cat" type="button" onClick={() => setOpen(open === "watch" ? null : "watch")}>
-            <div className="between"><h2>觀察名單</h2><span className="figure num">{data.watchlist.length}</span></div>
-            <div className="subline">{watchNames}</div>
-            <Dots count={data.watchlist.length} />
-            <div className="meta">{data.fx ? `美元兌港元 ${num(data.fx.rate, 4)}` : "未有匯率"}</div>
-          </button>
-        </div>
-      </div>
-      {open === "cash" ? <CashCard /> : null}
-      {open === "stocks" ? (
-        <Card title="持股">
-          {openHoldings.length === 0 ? <p className="muted">未有持股。按右上角加號新增。</p> : null}
+        }
+      >
+        {valuation.positions.filter((position) => position.holding.shares > 0).length === 0 ? (
+          <p className="muted">未有持股。可以新增，或者在設定載入示範資料。</p>
+        ) : (
           <div className="stack">
-            {openHoldings.map((position) => (
-              <button key={position.holding.id} className="row-btn" type="button" onClick={() => setDetailId(position.holding.id)}>
-                <div className="between">
-                  <div><span className="ticker">{position.holding.ticker}</span><span className="name">{position.holding.name}</span></div>
-                  <strong className="amount">{position.plPct == null ? "—" : pct(position.plPct)}</strong>
-                </div>
-                <div className="muted">
-                  {sharesText(position.holding.shares)} 股 · 成本 <span className="amount">{usd(position.holding.avgCostUsd)}</span>
-                  {position.priceSource === "manual" ? " · 手動價" : position.priceSource === "cost" ? " · 暫用成本" : <> · <span className="amount">{usd(position.priceUsd ?? 0)}</span></>}
-                </div>
-                <div className="between">
-                  <span className="amount">{hkd(position.mvHkd)}</span>
-                  <span className="muted">比重 {position.weight == null ? "—" : pct(position.weight, 1)}</span>
-                </div>
+            {valuation.positions
+              .filter((position) => position.holding.shares > 0)
+              .sort((a, b) => b.mvHkd - a.mvHkd)
+              .map((position) => (
+                <button key={position.holding.id} className="row-btn" type="button" onClick={() => setDetailId(position.holding.id)}>
+                  <div className="between">
+                    <div>
+                      <span className="ticker">{position.holding.ticker}</span>
+                      <span className="name">{position.holding.name}</span>
+                    </div>
+                    <strong className={position.plHkd >= 0 ? "up" : "down"}>{position.plPct == null ? "—" : pct(position.plPct)}</strong>
+                  </div>
+                  <div className="muted">
+                    {sharesText(position.holding.shares)} 股 · 成本 {usd(position.holding.avgCostUsd)}
+                    {position.priceSource === "manual" ? " · 手動價" : position.priceSource === "cost" ? " · 暫用成本" : ` · ${usd(position.priceUsd ?? 0)}`}
+                  </div>
+                  <div className="between">
+                    <span>{hkd(position.mvHkd)}</span>
+                    <span className="muted">比重 {position.weight == null ? "—" : pct(position.weight, 1)}</span>
+                  </div>
+                </button>
+              ))}
+          </div>
+        )}
+        {data.holdings.some((holding) => holding.shares <= 0) ? <p className="muted">已平倉的代號仍留在筆記，可在下方持股紀錄打開。</p> : null}
+        <div className="stack" style={{ marginTop: 8 }}>
+          {data.holdings
+            .filter((holding) => holding.shares <= 0)
+            .map((holding) => (
+              <button key={holding.id} className="row-btn" type="button" onClick={() => setDetailId(holding.id)}>
+                {holding.ticker} · 已平倉
               </button>
             ))}
-            {data.holdings.filter((holding) => holding.shares <= 0).map((holding) => (
-              <button key={holding.id} className="row-btn" type="button" onClick={() => setDetailId(holding.id)}>{holding.ticker} · 已平倉</button>
-            ))}
-          </div>
-        </Card>
-      ) : null}
-      {open === "watch" ? <WatchCard /> : null}
-      {addMenu ? (
-        <div className="modal" role="dialog" aria-label="新增">
-          <div className="modal-card">
-            <header className="sheet-head"><h1>新增</h1><button className="text-btn" type="button" onClick={() => setAddMenu(false)}>關閉</button></header>
-            <button className="row-btn" type="button" onClick={() => { setAddMenu(false); setAdding(true); }}>新增持股</button>
-            <button className="row-btn" type="button" onClick={() => { setAddMenu(false); setOpen("cash"); }}>記入現金或入金</button>
-            <button className="row-btn" type="button" onClick={() => { setAddMenu(false); setOpen("watch"); }}>加入觀察名單</button>
-          </div>
         </div>
-      ) : null}
+      </Card>
+
+      <WatchCard />
     </div>
   );
 }
 
-function plain(value: number): string {
-  return new Intl.NumberFormat("zh-HK", { maximumFractionDigits: 0 }).format(Math.round(value));
-}
-
-function Dots({ count }: { count: number }) {
-  const shown = Math.min(3, Math.max(count, 0));
-  if (shown === 0) return null;
+function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="dots" aria-hidden="true">
-      {Array.from({ length: shown }, (_, index) => <i key={index} className={index === 0 ? "on" : ""} />)}
+    <div className="stat">
+      <span>{label}</span>
+      <b className="num">{value}</b>
     </div>
   );
 }
