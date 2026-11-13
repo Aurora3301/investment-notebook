@@ -1,0 +1,1 @@
+{"name":"投資手帳","short_name":"投資手帳","description":"只存放在這部裝置的投資組合與筆記","start_url":"./","display":"standalone","background_color":"#efeae2","theme_color":"#1b5e45","lang":"zh-Hant-HK","scope":"./","dir":"ltr","icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},{"src":"icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}
