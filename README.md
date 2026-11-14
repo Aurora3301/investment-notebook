@@ -53,6 +53,16 @@ Android 用 Chrome 的「加到主畫面」或「安裝應用程式」即可。�
 
 XIRR 用實際日數除以 365，跟 Excel 同一套。入金是流出，提款是流入，終值是當日股票市值加現金。VOO 對照是：同樣的港元現金流在當日匯率買入 VOO，提款就賣出，再算年化。
 
+## 本機建議（LangChain）
+
+底部「建議」會先走現有的 CNBC／Frankfurter 更新，然後在這部裝置跑一條 LangGraph：
+
+1. **updates**：查報價備註，再查本機持股、風險、溝貨等資料。
+2. **messages**：本地的 `LocalJsonChatModel` 把 JSON 報告逐段送出。它不是雲端模型，不會把持倉送出去。
+3. 畫面用 partial JSON 解析器，在 JSON 尚未收完時先畫出已經閉合的欄位。
+
+這是用來學 LangChain 串流形狀的實作。不要把它換成會連網的 Chat 模型，否則提示詞會帶有持股同成本。
+
 ## 在電腦改網頁
 
 ```bash
