@@ -7,6 +7,7 @@ import {
   type Holding,
   type Notebook,
   type Onboarding,
+  type Quote,
   type Settings,
   emptyNotebook,
 } from "./types";
@@ -84,6 +85,31 @@ function holdingOf(value: unknown, index: number): Holding | null {
   };
 }
 
+function quotesOf(value: unknown): Record<string, Quote> {
+  const bag = rec(value);
+  if (!bag) return {};
+  const out: Record<string, Quote> = {};
+  for (const [key, item] of Object.entries(bag)) {
+    const row = rec(item);
+    const ticker = str(row?.ticker || key).trim().toUpperCase();
+    const price = num(row?.priceUsd, null);
+    if (!ticker || price == null || price <= 0) continue;
+    out[ticker] = {
+      ticker,
+      priceUsd: price,
+      asOf: str(row?.asOf),
+      currency: str(row?.currency) || "USD",
+      changePct: num(row?.changePct, null),
+      name: str(row?.name) || ticker,
+      beta: num(row?.beta, null),
+      marketCapUsd: num(row?.marketCapUsd, null),
+      session: str(row?.session),
+      source: str(row?.source) || "backup",
+    };
+  }
+  return out;
+}
+
 function settingsOf(value: unknown, hasData: boolean): Settings {
   const base = emptyNotebook().settings;
   const row = rec(value);
@@ -135,6 +161,7 @@ export function normalize(input: unknown): Notebook {
   };
   return {
     schemaVersion: SCHEMA_VERSION,
+    savedAt: str(row.savedAt),
     holdings,
     cashHkd: num(row.cashHkd, 0) ?? 0,
     cashFlows: mapRows(row.cashFlows, (item, index) => {
@@ -201,7 +228,7 @@ export function normalize(input: unknown): Notebook {
       return { id: str(item.id) || `watch-${index}`, ticker, name: str(item.name) || ticker, note: str(item.note) };
     }),
     settings: settingsOf(row.settings, holdings.length > 0 || (Array.isArray(row.cashFlows) && row.cashFlows.length > 0) || (Array.isArray(row.trades) && row.trades.length > 0)),
-    quotes: {},
+    quotes: quotesOf(row.quotes),
     fx: (() => {
       const fx = rec(row.fx);
       const rate = num(fx?.rate, null);

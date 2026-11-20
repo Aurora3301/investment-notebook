@@ -56,10 +56,14 @@ async function fetchJson(url: string, ms: number): Promise<unknown> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
+    // No custom headers. Accept: application/json is not a simple request header
+    // on every browser, so WebKit sends a preflight. CNBC answers OPTIONS with
+    // 403 and no CORS header, and the phone then stays on 「未有報價」.
     const response = await fetch(url, {
       signal: controller.signal,
       referrerPolicy: "no-referrer",
-      headers: { Accept: "application/json" },
+      cache: "no-store",
+      credentials: "omit",
     });
     if (!response.ok) throw new Error(String(response.status));
     return await response.json();

@@ -139,7 +139,7 @@ button { cursor: pointer; }
 .btn-ghost { background: transparent; color: var(--pine-deep); border: 1px solid var(--line); }
 .btn-warn { background: var(--clay); }
 .btn-tiny { min-height: 34px; font-size: 13px; padding: 0 12px; }
-.btn:disabled, .btn-ghost:disabled { opacity: 0.45; }
+.btn:disabled, .btn-ghost:disabled, .btn-tiny:disabled { opacity: 0.45; }
 
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
 .field input, .field select, .field textarea {

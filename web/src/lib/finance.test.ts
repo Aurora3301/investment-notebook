@@ -4,9 +4,10 @@ import { nyDate, usCloseIso } from "./dates";
 import { advise } from "./advice";
 import { createDemo } from "./demo";
 import { todayHK } from "./dates";
+import { chooseNotebook } from "./db";
 import { migrate } from "./normalize";
 import { parseChangePct, parseCnbcQuotes, parseFrankfurter, parseMarketCap, parseYahooChart, yahooHistoryCovers } from "./quotes";
-import { emptyNotebook } from "./types";
+import { emptyGates, emptyNotebook } from "./types";
 
 describe("xirr", () => {
   it("matches the Excel sample on actual/365", () => {
@@ -200,6 +201,63 @@ describe("trades and migration", () => {
     expect(withHolding.holdings[0]?.gates).toHaveLength(4);
     expect(notebook.settings.gateTitles).toEqual(["關卡一", "關卡二", "關卡三", "關卡四"]);
     expect(notebook.settings.riskPct).toBe(2);
+  });
+
+  it("keeps a saved quote instead of dropping it on load", () => {
+    const notebook = migrate({
+      savedAt: "2026-01-02T00:00:00.000Z",
+      cashHkd: 20,
+      quotes: {
+        AAPL: {
+          ticker: "AAPL",
+          priceUsd: 10,
+          asOf: "2026-01-02T00:00:00.000Z",
+          currency: "USD",
+          changePct: 1,
+          name: "Apple",
+          beta: 1.2,
+          marketCapUsd: 3,
+          session: "已收市",
+          source: "CNBC",
+        },
+      },
+    });
+    expect(notebook.savedAt).toBe("2026-01-02T00:00:00.000Z");
+    expect(notebook.quotes.AAPL?.priceUsd).toBe(10);
+    expect(notebook.cashHkd).toBe(20);
+  });
+
+  it("keeps the newer notebook and backfills history from the other copy", () => {
+    const older = emptyNotebook();
+    older.savedAt = "2026-01-01T00:00:00.000Z";
+    older.cashHkd = 1;
+    older.fxHistory = [{ date: "2026-01-01", rate: 7.8 }];
+    const newer = emptyNotebook();
+    newer.savedAt = "2026-01-03T00:00:00.000Z";
+    newer.cashHkd = 5000;
+    newer.holdings = [{
+      id: "h",
+      ticker: "AAPL",
+      name: "Apple",
+      shares: 2,
+      avgCostUsd: 100,
+      notes: "",
+      sector: "",
+      beta: null,
+      marketCapUsd: null,
+      betaManual: false,
+      marketCapManual: false,
+      psychStopUsd: null,
+      breakevenStop: false,
+      conviction: false,
+      manualPriceUsd: null,
+      gates: emptyGates(),
+      keyDates: [],
+    }];
+    const chosen = chooseNotebook(older, newer);
+    expect(chosen?.cashHkd).toBe(5000);
+    expect(chosen?.holdings[0]?.ticker).toBe("AAPL");
+    expect(chosen?.fxHistory).toEqual([{ date: "2026-01-01", rate: 7.8 }]);
   });
 
   it("keeps the demo book obviously separate from a blank start", () => {

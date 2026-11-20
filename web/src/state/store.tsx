@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { valuePortfolio } from "../lib/calc";
 import { todayHK } from "../lib/dates";
-import { loadNotebook, saveNotebook } from "../lib/db";
+import { loadStoredNotebook, readLocalNotebook, saveNotebook, writeLocalNotebook } from "../lib/db";
 import { fetchHistoryMarket, fetchLiveMarket, tryYahooVooHistory, yahooHistoryCovers } from "../lib/quotes";
 import { emptyNotebook, type Holding, type Notebook, type Quote } from "../lib/types";
 
@@ -29,70 +29,104 @@ function enrichHolding(holding: Holding, quotes: Record<string, Quote>): Holding
   };
 }
 
+const SAVE_ERROR = "這部裝置未能保存資料。請在設定匯出 JSON，以免關掉程式後消失。";
+
+function storedOrEmpty(): Notebook {
+  return readLocalNotebook() ?? emptyNotebook();
+}
+
+function hasStarted(book: Notebook): boolean {
+  return Boolean(book.savedAt || book.holdings.length || book.cashFlows.length || book.trades.length || book.cashHkd);
+}
+
 export function NotebookProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<Notebook>(emptyNotebook);
-  const [ready, setReady] = useState(false);
+  const [data, setData] = useState<Notebook>(storedOrEmpty);
+  const [ready, setReady] = useState(() => hasStarted(storedOrEmpty()));
   const [dbError, setDbError] = useState<string | null>(null);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketBusy, setMarketBusy] = useState(false);
   const dataRef = useRef(data);
-  dataRef.current = data;
   const pending = useRef<Notebook | null>(null);
   const timer = useRef<number | null>(null);
   const booted = useRef(false);
   const refreshGeneration = useRef(0);
 
   const persist = useCallback((next: Notebook) => {
-    pending.current = next;
+    const stamped = { ...next, savedAt: new Date().toISOString() };
+    dataRef.current = stamped;
+    pending.current = stamped;
+    const local = writeLocalNotebook(stamped);
+    if (local === "failed") setDbError(SAVE_ERROR);
+    else setDbError(null);
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
       const snapshot = pending.current;
       if (!snapshot) return;
-      void saveNotebook(snapshot).catch(() => setDbError("無法寫入 IndexedDB，這次改動可能未能保存。"));
+      void saveNotebook(snapshot).catch(() => {
+        if (writeLocalNotebook(snapshot) === "failed") setDbError(SAVE_ERROR);
+      });
     }, 200);
+    return stamped;
   }, []);
 
   useEffect(() => {
     let cancel = false;
-    void loadNotebook()
+    const openTimer = window.setTimeout(() => {
+      if (!cancel) setReady(true);
+    }, 4000);
+    void loadStoredNotebook()
       .then((loaded) => {
-        if (!cancel && loaded) setData(loaded);
+        if (cancel || !loaded) return;
+        setData((current) => {
+          if (current.savedAt && current.savedAt >= (loaded.savedAt || "")) {
+            dataRef.current = current;
+            return current;
+          }
+          dataRef.current = loaded;
+          return loaded;
+        });
       })
       .catch(() => {
-        if (!cancel) setDbError("這部瀏覽器未能開啟 IndexedDB。你可以繼續查看，但重新整理後資料會消失。");
+        if (!cancel) setDbError(SAVE_ERROR);
       })
       .finally(() => {
         if (!cancel) setReady(true);
+        window.clearTimeout(openTimer);
       });
     const flush = () => {
-      if (pending.current) void saveNotebook(pending.current).catch(() => undefined);
+      const snapshot = pending.current ?? dataRef.current;
+      if (!snapshot?.savedAt) return;
+      writeLocalNotebook(snapshot);
+      void saveNotebook(snapshot).catch(() => undefined);
+    };
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flush();
     };
     window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onHide);
+    void navigator.storage?.persist?.();
     return () => {
       cancel = true;
+      window.clearTimeout(openTimer);
       window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onHide);
       flush();
     };
   }, []);
 
   const update = useCallback(
     (fn: (current: Notebook) => Notebook) => {
-      setData((prev) => {
-        const next = fn(prev);
-        persist(next);
-        return next;
-      });
+      setData((prev) => persist(fn(prev)));
     },
     [persist],
   );
 
   const replace = useCallback(
     (next: Notebook) => {
-      setData(next);
-      pending.current = next;
-      void saveNotebook(next).catch(() => setDbError("無法寫入 IndexedDB。"));
+      const stamped = persist(next);
+      setData(stamped);
     },
-    [],
+    [persist],
   );
 
   const refreshMarket = useCallback(
@@ -119,9 +153,9 @@ export function NotebookProvider({ children }: { children: ReactNode }) {
             const today = todayHK();
             const equity = valuePortfolio(next).equityHkd;
             next.equitySnapshots = [...next.equitySnapshots.filter((item) => item.date !== today), { date: today, equityHkd: equity }].slice(-800);
-            persist(next);
-            book = next;
-            return next;
+            const stamped = persist(next);
+            book = stamped;
+            return stamped;
           });
           if (live.errors.length) setMarketError(live.errors.join("　"));
         }
@@ -145,8 +179,7 @@ export function NotebookProvider({ children }: { children: ReactNode }) {
               fxHistory: history.fxHistory,
               priceHistory: { ...prev.priceHistory, ...history.priceHistory },
             };
-            persist(next);
-            return next;
+            return persist(next);
           });
           const historyErrors = [...errorsNow, ...history.errors];
           if (!stale()) setMarketError(historyErrors.length ? historyErrors.join("　") : null);
@@ -158,17 +191,15 @@ export function NotebookProvider({ children }: { children: ReactNode }) {
           if (stale() || !points) return;
           const earliest = [...dataRef.current.cashFlows].map((flow) => flow.date).sort()[0];
           if (!yahooHistoryCovers(points, earliest)) return;
-          setData((prev) => {
-            const next: Notebook = {
+          setData((prev) =>
+            persist({
               ...prev,
               priceHistory: {
                 ...prev.priceHistory,
                 VOO: { points, adjusted: true, source: "yahoo", fetchedAt: new Date().toISOString() },
               },
-            };
-            persist(next);
-            return next;
-          });
+            }),
+          );
         } catch {
           // CNBC close remains, and the portfolio screen keeps the dividend disclosure.
         }
@@ -181,10 +212,9 @@ export function NotebookProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!ready || booted.current) return;
-    if (data.settings.onboarding === "pending") return;
     booted.current = true;
     void refreshMarket();
-  }, [ready, data.settings.onboarding, refreshMarket]);
+  }, [ready, refreshMarket]);
 
   const value: Store = { ready, dbError, data, marketError, marketBusy, update, replace, refreshMarket };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

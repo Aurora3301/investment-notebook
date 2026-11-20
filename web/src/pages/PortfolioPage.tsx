@@ -8,9 +8,8 @@ import { useNotebook } from "../state/store";
 import { Card, Field, GhostButton, PrimaryButton, gateLabel, nextGate } from "../ui/ui";
 
 export function PortfolioPage() {
-  const { data, marketBusy, refreshMarket } = useNotebook();
+  const { data, marketBusy } = useNotebook();
   const [detailId, setDetailId] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
   const valuation = useMemo(() => valuePortfolio(data), [data]);
   const asOf = todayHK();
   const summary = useMemo(() => performanceSummary(data.cashFlows, valuation.equityHkd, asOf), [data.cashFlows, valuation.equityHkd, asOf]);
@@ -30,7 +29,6 @@ export function PortfolioPage() {
 
   const detail = data.holdings.find((holding) => holding.id === detailId);
   if (detail) return <HoldingDetail holding={detail} onBack={() => setDetailId(null)} />;
-  if (adding) return <HoldingEditor holding={null} onClose={() => setAdding(false)} />;
 
   const quoteTimes = Object.values(data.quotes).map((quote) => quote.asOf).filter(Boolean).sort();
   const latestQuote = quoteTimes.at(-1);
@@ -42,6 +40,9 @@ export function PortfolioPage() {
 
   return (
     <div>
+      <AddStockCard />
+      <CashCard />
+
       <section className="hero">
         <div className="label">總資產（港元）</div>
         <div className="total num">{valuation.fx ? hkd(valuation.equityHkd) : "待匯率"}</div>
@@ -60,12 +61,8 @@ export function PortfolioPage() {
         <p className="sub">
           {data.fx ? `美元兌港元 ${num(data.fx.rate, 4)}（${data.fx.date}）` : "未有美元兌港元"}
           {valuation.provisional ? " · 有持倉暫用成本" : ""}
+          {marketBusy ? " · 正在更新報價" : ""}
         </p>
-        <div className="actions">
-          <PrimaryButton type="button" disabled={marketBusy} onClick={() => void refreshMarket({ forceHistory: true })}>
-            {marketBusy ? "更新中…" : "更新報價"}
-          </PrimaryButton>
-        </div>
       </section>
 
       <Card title="回報 vs 標普">
@@ -89,18 +86,16 @@ export function PortfolioPage() {
         </p>
       </Card>
 
-      <CashCard />
-
       <Card
         title="持股"
         extra={
-          <button className="btn-tiny" type="button" onClick={() => setAdding(true)}>
+          <button className="btn-tiny" type="button" onClick={() => document.getElementById("add-stock")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
             新增
           </button>
         }
       >
         {valuation.positions.filter((position) => position.holding.shares > 0).length === 0 ? (
-          <p className="muted">未有持股。可以新增，或者在設定載入示範資料。</p>
+          <p className="muted">未有持股。用上面的表格記入代號、股數同成本。</p>
         ) : (
           <div className="stack">
             {valuation.positions
@@ -153,6 +148,96 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function AddStockCard() {
+  const { update, refreshMarket } = useNotebook();
+  const [ticker, setTicker] = useState("");
+  const [name, setName] = useState("");
+  const [shares, setShares] = useState("");
+  const [cost, setCost] = useState("");
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState("");
+
+  return (
+    <Card title="加入股票">
+      <div id="add-stock" className="stack">
+        <Field label="代號">
+          <input
+            value={ticker}
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="例如 AAPL"
+            onChange={(event) => setTicker(event.target.value)}
+          />
+        </Field>
+        <Field label="名稱（可留空）">
+          <input value={name} placeholder="Apple" onChange={(event) => setName(event.target.value)} />
+        </Field>
+        <div className="grid2">
+          <Field label="股數">
+            <input inputMode="decimal" value={shares} placeholder="10" onChange={(event) => setShares(event.target.value)} />
+          </Field>
+          <Field label="平均成本（美元）">
+            <input inputMode="decimal" value={cost} placeholder="180" onChange={(event) => setCost(event.target.value)} />
+          </Field>
+        </div>
+        {error ? <p className="banner soft">{error}</p> : null}
+        {saved ? <p className="banner info">{saved}</p> : null}
+        <div className="actions">
+          <PrimaryButton
+            type="button"
+            onClick={() => {
+              const symbol = cleanTicker(ticker);
+              const shareCount = parseDecimal(shares);
+              const avg = parseDecimal(cost);
+              if (!symbol || shareCount == null || shareCount < 0 || avg == null || avg < 0) {
+                setSaved("");
+                setError("請填代號、股數同成本。");
+                return;
+              }
+              update((book) => {
+                const created: Holding = {
+                  id: uid(),
+                  ticker: symbol,
+                  name: name.trim() || symbol,
+                  shares: shareCount,
+                  avgCostUsd: avg,
+                  notes: "",
+                  sector: "",
+                  beta: null,
+                  marketCapUsd: null,
+                  betaManual: false,
+                  marketCapManual: false,
+                  psychStopUsd: null,
+                  breakevenStop: false,
+                  conviction: false,
+                  manualPriceUsd: null,
+                  gates: emptyGates(),
+                  keyDates: [],
+                };
+                return {
+                  ...book,
+                  settings: { ...book.settings, onboarding: book.settings.onboarding === "pending" ? "empty" : book.settings.onboarding },
+                  holdings: [...book.holdings, created],
+                };
+              });
+              setTicker("");
+              setName("");
+              setShares("");
+              setCost("");
+              setError("");
+              setSaved(`已儲存 ${symbol}。報價會接著更新。`);
+              void refreshMarket();
+            }}
+          >
+            儲存股票
+          </PrimaryButton>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function CashCard() {
   const { data, update } = useNotebook();
   const [cash, setCash] = useState(String(data.cashHkd));
@@ -162,31 +247,67 @@ function CashCard() {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [sync, setSync] = useState(true);
+  const [saved, setSaved] = useState("");
   useEffect(() => {
     setCash(String(data.cashHkd));
   }, [data.cashHkd]);
 
+  const saveBalance = () => {
+    const next = parseDecimal(cash);
+    if (next == null) {
+      setSaved("");
+      return;
+    }
+    update((book) => ({
+      ...book,
+      cashHkd: next,
+      settings: { ...book.settings, onboarding: book.settings.onboarding === "pending" ? "empty" : book.settings.onboarding },
+    }));
+    setSaved(`已儲存現金 ${hkd(next)}。`);
+  };
+
+  const saveFlow = (flowKind: "in" | "out", flowDate: string, flowNote: string) => {
+    const value = parseDecimal(amount);
+    if (value == null || value <= 0 || !flowDate) return;
+    const signed = flowKind === "in" ? value : -value;
+    update((book) => ({
+      ...book,
+      cashHkd: sync ? book.cashHkd + signed : book.cashHkd,
+      settings: { ...book.settings, onboarding: book.settings.onboarding === "pending" ? "empty" : book.settings.onboarding },
+      cashFlows: [...book.cashFlows, { id: uid(), date: flowDate, amountHkd: signed, note: flowNote }],
+    }));
+    setAmount("");
+    setNote("");
+    if (sync) setCash(String((parseDecimal(cash) ?? data.cashHkd) + signed));
+    setSaved(flowKind === "in" ? `已記入入金 ${hkd(value)}。` : `已記入提款 ${hkd(value)}。`);
+  };
+
   return (
-    <Card title="港元現金">
-      <Field label="現金結餘">
+    <Card title="加入現金">
+      <Field label="現金結餘（港元）">
         <input inputMode="decimal" value={cash} onChange={(event) => setCash(event.target.value)} />
       </Field>
       <div className="actions">
-        <PrimaryButton
-          type="button"
-          onClick={() => {
-            const next = parseDecimal(cash);
-            if (next == null) return;
-            update((book) => ({ ...book, cashHkd: next }));
-          }}
-        >
+        <PrimaryButton type="button" onClick={saveBalance}>
           儲存結餘
         </PrimaryButton>
+      </div>
+      <Field label="入金或提款金額（港元）">
+        <input inputMode="decimal" value={amount} placeholder="10000" onChange={(event) => setAmount(event.target.value)} />
+      </Field>
+      <div className="actions">
+        <PrimaryButton type="button" onClick={() => saveFlow("in", todayHK(), note)}>
+          記入入金
+        </PrimaryButton>
+        <GhostButton type="button" onClick={() => saveFlow("out", todayHK(), note)}>
+          記入提款
+        </GhostButton>
         <GhostButton type="button" onClick={() => setOpen((value) => !value)}>
-          {open ? "收起入帳" : "記入入金／提款"}
+          {open ? "收起日期備註" : "改日期或備註"}
         </GhostButton>
       </div>
-      <p className="muted">直接改結餘不會當成入金。計 XIRR 請另記入金或提款。</p>
+      {saved ? <p className="banner info">{saved}</p> : null}
+      <p className="muted">直接改結餘不會當成入金。計回報請用入金或提款。金額會立刻寫入這部裝置。</p>
       {open ? (
         <div className="stack" style={{ marginTop: 8 }}>
           <Field label="日期">
@@ -196,9 +317,6 @@ function CashCard() {
             <button type="button" aria-pressed={kind === "in"} onClick={() => setKind("in")}>入金</button>
             <button type="button" aria-pressed={kind === "out"} onClick={() => setKind("out")}>提款</button>
           </div>
-          <Field label="金額（港元）">
-            <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
-          </Field>
           <Field label="備註">
             <input value={note} onChange={(event) => setNote(event.target.value)} />
           </Field>
@@ -206,23 +324,8 @@ function CashCard() {
             <input type="checkbox" checked={sync} onChange={(event) => setSync(event.target.checked)} />
             同時調整現金結餘
           </label>
-          <PrimaryButton
-            type="button"
-            onClick={() => {
-              const value = parseDecimal(amount);
-              if (value == null || value <= 0 || !date) return;
-              const signed = kind === "in" ? value : -value;
-              update((book) => ({
-                ...book,
-                cashHkd: sync ? book.cashHkd + signed : book.cashHkd,
-                cashFlows: [...book.cashFlows, { id: uid(), date, amountHkd: signed, note }],
-              }));
-              setAmount("");
-              setNote("");
-              if (sync) setCash(String((parseDecimal(cash) ?? data.cashHkd) + signed));
-            }}
-          >
-            儲存
+          <PrimaryButton type="button" onClick={() => saveFlow(kind, date, note)}>
+            用上面的日期儲存
           </PrimaryButton>
         </div>
       ) : null}
