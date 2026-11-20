@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { monthPerformance, valuePortfolio } from "./lib/calc";
-import { createDemo } from "./lib/demo";
-import { emptyNotebook } from "./lib/types";
 import { AdvicePage } from "./pages/AdvicePage";
 import { JournalPage } from "./pages/JournalPage";
 import { PortfolioPage } from "./pages/PortfolioPage";
@@ -36,7 +34,7 @@ export function App() {
 }
 
 function Shell() {
-  const { ready, dbError, data, marketError, replace } = useNotebook();
+  const { ready, dbError, data, marketError, marketBusy, refreshMarket } = useNotebook();
   const [tab, setTab] = useState<Tab>(readTab);
   useEffect(() => {
     const onHash = () => setTab(readTab());
@@ -53,33 +51,6 @@ function Shell() {
   });
 
   if (!ready) return <div className="boot">正在讀取這部裝置上的手帳…</div>;
-  if (data.settings.onboarding === "pending") {
-    return (
-      <div className="onboard">
-        <div className="onboard-card">
-          <h1>投資手帳</h1>
-          <p>組合、風險同筆記只放在這部裝置。沒有帳戶，也不會把持股送到伺服器。</p>
-          <div className="actions">
-            <button className="btn" type="button" onClick={() => replace(createDemo())}>
-              載入示範資料
-            </button>
-            <button
-              className="btn-ghost"
-              type="button"
-              onClick={() => {
-                const blank = emptyNotebook();
-                blank.settings.onboarding = "empty";
-                replace(blank);
-              }}
-            >
-              由空白開始
-            </button>
-          </div>
-          <p className="muted">示範資料是虛構的，可以隨時清除。這不是投資建議，亦不是任何導師的官方產品。</p>
-        </div>
-      </div>
-    );
-  }
 
   const select = (next: Tab) => {
     setTab(next);
@@ -91,7 +62,9 @@ function Shell() {
       <header className="top">
         <div className="brand">
           <h1>投資手帳</h1>
-          <span className="pill">只存這部裝置</span>
+          <button className="btn-tiny" type="button" disabled={marketBusy} onClick={() => void refreshMarket({ forceHistory: true })}>
+            {marketBusy ? "更新中…" : "更新報價"}
+          </button>
         </div>
         {data.settings.onboarding === "demo" ? <div className="ribbon">示範資料，並非真實持倉。可在設定清除。</div> : null}
         {dbError ? <div className="banner soft">{dbError}</div> : null}

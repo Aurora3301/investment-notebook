@@ -22,7 +22,7 @@
 
 <https://aurora3301.github.io/investment-notebook/>
 
-第一次會問你載入虛構的示範資料，還是由空白開始。示範資料標明「並非真實持倉」，可以在設定清除。
+第一次打開就可以直接記入股票同港元現金，右上角按「更新報價」。示範資料可以在設定載入，並標明「並非真實持倉」，可以清除。
 
 ### 加到 iPhone 主畫面
 
@@ -112,7 +112,7 @@ After this repository is on `main` and GitHub Pages is set to **GitHub Actions**
 
 <https://aurora3301.github.io/investment-notebook/>
 
-On iPhone, open that URL in Safari and use Share → Add to Home Screen.
+On iPhone, open that URL in Safari and use Share → Add to Home Screen. The first screen is the portfolio: add a stock and Hong Kong-dollar cash there, then tap 更新報價. Holdings and cash are written to local storage immediately, with IndexedDB as the second copy.
 
 To install the native shell, a Mac user opens `ios/InvestmentNotebook.xcodeproj`, selects their signing team, and runs it on their own iPhone. App Store and TestFlight still need a paid Apple Developer account. Strangers cannot sideload a native iOS app from GitHub alone.
 

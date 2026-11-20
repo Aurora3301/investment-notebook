@@ -174,6 +174,8 @@ export interface AdviceTurn {
 
 export interface Notebook {
   schemaVersion: number;
+  /** ISO time of the last local save. Used to pick the newer copy when IndexedDB and localStorage disagree. */
+  savedAt: string;
   holdings: Holding[];
   cashHkd: number;
   cashFlows: CashFlow[];
@@ -234,6 +236,7 @@ export function defaultSettings(): Settings {
 export function emptyNotebook(): Notebook {
   return {
     schemaVersion: SCHEMA_VERSION,
+    savedAt: "",
     holdings: [],
     cashHkd: 0,
     cashFlows: [],
